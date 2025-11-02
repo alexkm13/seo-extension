@@ -35,7 +35,7 @@ A comprehensive Chrome extension for analyzing and improving SEO on any web page
 5. Check the "Recommendations" tab for actionable fixes
 6. Optionally enable "Deep checks" for network-level analysis
 
-### AI Recommendations (Optional)
+### AI Recommendations (Beta)
 
 1. Go to the "Settings" tab
 2. Enter your OpenAI API key (get one at [platform.openai.com](https://platform.openai.com/api-keys))
