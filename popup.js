@@ -671,23 +671,24 @@ function activeTab() {
           const totalPoints = passCount + (warnCount * 0.5);
           const maxPoints = checks.length;
           const percentage = maxPoints > 0 ? (totalPoints / maxPoints) * 100 : 0;
-          // Grade assignment
+          const score = Math.round(percentage);
+          // Grade assignment based on rounded score
           // A+ only if no fails AND no warns AND 95-100%
           // Otherwise use classic grading scale: A (90-100%), B (80-89%), C (70-79%), D (60-69%), F (0-59%)
           let grade;
-          if (failCount === 0 && warnCount === 0 && percentage >= 95 && percentage <= 100) {
+          if (failCount === 0 && warnCount === 0 && score >= 95 && score <= 100) {
             grade = "A+";
           } else {
             // Classic grading scale
-            if (percentage >= 90) grade = "A";
-            else if (percentage >= 80) grade = "B";
-            else if (percentage >= 70) grade = "C";
-            else if (percentage >= 60) grade = "D";
+            if (score >= 90) grade = "A";
+            else if (score >= 80) grade = "B";
+            else if (score >= 70) grade = "C";
+            else if (score >= 60) grade = "D";
             else grade = "F";
           }
           return {
             grade,
-            score: Math.round(percentage),
+            score,
             percentage: Math.round(percentage * 10) / 10,
             passCount,
             warnCount,
@@ -832,23 +833,24 @@ function activeTab() {
         const totalPoints = passCount + (warnCount * 0.5);
         const maxPoints = checks.length;
         const percentage = maxPoints > 0 ? (totalPoints / maxPoints) * 100 : 0;
-        // Grade assignment
+        const score = Math.round(percentage);
+        // Grade assignment based on rounded score
         // A+ only if no fails AND no warns AND 95-100%
         // Otherwise use classic grading scale: A (90-100%), B (80-89%), C (70-79%), D (60-69%), F (0-59%)
         let grade;
-        if (failCount === 0 && warnCount === 0 && percentage >= 95 && percentage <= 100) {
+        if (failCount === 0 && warnCount === 0 && score >= 95 && score <= 100) {
           grade = "A+";
         } else {
           // Classic grading scale
-          if (percentage >= 90) grade = "A";
-          else if (percentage >= 80) grade = "B";
-          else if (percentage >= 70) grade = "C";
-          else if (percentage >= 60) grade = "D";
+          if (score >= 90) grade = "A";
+          else if (score >= 80) grade = "B";
+          else if (score >= 70) grade = "C";
+          else if (score >= 60) grade = "D";
           else grade = "F";
         }
         return {
           grade,
-          score: Math.round(percentage),
+          score,
           percentage: Math.round(percentage * 10) / 10,
           passCount,
           warnCount,
