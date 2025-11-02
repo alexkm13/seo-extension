@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Editor directories and files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Node modules (if used in the future)
+node_modules/
+
+# Build outputs
+dist/
+build/
+
