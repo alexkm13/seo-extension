@@ -1062,9 +1062,9 @@
     const add = (id, ok, severity, message, where = []) =>
       checks.push({ id, ok, severity, message, where });
 
-    add("title-length", title.length >= 50 && title.length <= 60,
-      title ? (title.length >= 50 && title.length <= 60 ? "pass" : "warn") : "fail",
-      `Title length: ${title.length || 0} (recommended 50–60)${title ? ` | Title: "${title}"` : ''}.`);
+    add("title-length", title.length >= 45 && title.length <= 70,
+      title ? (title.length >= 45 && title.length <= 70 ? "pass" : "warn") : "fail",
+      `Title length: ${title.length || 0} (recommended 45–70)${title ? ` | Title: "${title}"` : ''}.`);
     add("meta-description", metaDesc.length >= 120 && metaDesc.length <= 160,
       metaDesc ? (metaDesc.length >= 120 && metaDesc.length <= 160 ? "pass" : "warn") : "fail",
       `Meta description length: ${metaDesc.length || 0} (recommended 120–160)${metaDesc ? ` | Description: "${metaDesc}"` : ''}.`);

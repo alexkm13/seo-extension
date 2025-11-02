@@ -42,7 +42,7 @@ function activeTab() {
     if (base?.error) throw new Error(base.error);
     return base;
   }
-
+  
   async function analyzeViaInjection(tabId) {
     // Get current tab URL to detect navigation
     const tab = await chrome.tabs.get(tabId);
@@ -127,7 +127,7 @@ function activeTab() {
           let last = 0;
           for (const h of list) {
             const lvl = Number(h.tagName[1]);
-            if (last && lvl > last + 1) return { ok:false, offender:h, msg:`Heading jump H${last} -> H${lvl}` };
+          if (last && lvl > last + 1) return { ok:false, offender:h, msg:`Heading jump H${last} -> H${lvl}` };
             last = lvl;
           }
           return { ok:true };
@@ -603,8 +603,8 @@ function activeTab() {
         const checks = [];
         const add = (id, ok, severity, message, where=[]) => checks.push({ id, ok, severity, message, where });
   
-        add("title-length", title.length >= 50 && title.length <= 60,
-          title ? (title.length >= 50 && title.length <= 60 ? "pass" : "warn") : "fail",
+        add("title-length", title.length >= 45 && title.length <= 70,
+          title ? (title.length >= 45 && title.length <= 70 ? "pass" : "warn") : "fail",
           `Title length: ${title.length || 0}${title ? ` | Title: "${title}"` : ''}`);
         add("meta-description", metaDesc.length >= 120 && metaDesc.length <= 160,
           metaDesc ? (metaDesc.length >= 120 && metaDesc.length <= 160 ? "pass" : "warn") : "fail",
@@ -935,7 +935,7 @@ function activeTab() {
   
     checksEl.textContent = "";
     const CHECK_INFO = {
-      "title-length": { tip: "Keep titles ~50-60 chars; front-load primary keyword.", link: "https://developers.google.com/search/docs/appearance/title-link" },
+      "title-length": { tip: "Keep titles ~45-70 chars; front-load primary keyword.", link: "https://developers.google.com/search/docs/appearance/title-link" },
       "meta-description": { tip: "Summarize page ~120-160 chars; unique per page.", link: "https://developers.google.com/search/docs/appearance/description" },
       "h1-count": { tip: "Use a single clear H1 per page.", link: "https://web.dev/learn/html/headings-and-sections/" },
       "heading-hierarchy": { tip: "Avoid jumps (H2→H4). Step levels logically.", link: "https://web.dev/learn/html/headings-and-sections/" },
@@ -1012,7 +1012,29 @@ function activeTab() {
       // Value
       const valueDiv = document.createElement("div");
       valueDiv.className = "check-value";
-      valueDiv.textContent = c.message;
+      
+      // Format message for better display - split long messages
+      if (c.id === 'meta-description' && c.message) {
+        // Parse meta description message to display it nicely
+        const messageParts = c.message.split(' | ');
+        messageParts.forEach((part, idx) => {
+          if (idx > 0) {
+            const br = document.createElement('br');
+            valueDiv.appendChild(br);
+          }
+          const span = document.createElement('span');
+          // Clean up the message (remove trailing period if standalone)
+          let cleanPart = part.trim();
+          // Remove trailing period only if it's not part of quoted text
+          if (cleanPart.endsWith('.') && !cleanPart.match(/^[^"]*"[^"]*"\.$/)) {
+            cleanPart = cleanPart.slice(0, -1);
+          }
+          span.textContent = cleanPart;
+          valueDiv.appendChild(span);
+        });
+      } else {
+        valueDiv.textContent = c.message;
+      }
       
       // Add "Elements flagged" to value column for h1-count and image-alt checks
       if ((c.id === 'h1-count' || c.id === 'image-alt') && c.where && c.where.length) {
@@ -1021,7 +1043,7 @@ function activeTab() {
         count.textContent = `Elements flagged: ${c.where.length}`;
         valueDiv.appendChild(count);
       }
-      
+
       // Add highlight button for anchor-text check (below value text)
       if (c.id === 'anchor-text') {
         const actions = document.createElement('div');
@@ -1075,7 +1097,7 @@ function activeTab() {
                 if (!document.getElementById(styleId)) {
                   const st = document.createElement('style');
                   st.id = styleId;
-                  st.textContent = `.seo-scout-highlight{outline:2px solid #ff4d4f !important; outline-offset:2px !important;}`;
+                  st.textContent = `.seo-scout-highlight{outline:2px solid #ea4335 !important; outline-offset:10px !important; box-shadow: 12px 0 0 0 rgba(234, 67, 53, 0.6), -12px 0 0 0 rgba(234, 67, 53, 0.6) !important; margin: -4px 0 !important; padding: 2px 0 !important;}`;
                   document.documentElement.appendChild(st);
                 }
                 const flagAttr = 'data-seo-scout-highlight';
@@ -1504,7 +1526,7 @@ function activeTab() {
         }
         const domain = context.domain || '';
         
-        if (length < 50) {
+        if (length < 45) {
           // Create personalized example based on current title and domain
           let example = '';
           // Always show an example if domain is available, even without current title
@@ -1515,7 +1537,7 @@ function activeTab() {
               // Very short title - add domain and value proposition
               const domainName = domain ? domain.charAt(0).toUpperCase() + domain.slice(1) : 'YourSite';
               enhanced = `${currentTitle} - ${domainName} | Premium Services & Quality`;
-            } else if (currentTitle.length < 40) {
+            } else if (currentTitle.length < 35) {
               // Medium title - add domain/brand
               const domainName = domain ? domain.charAt(0).toUpperCase() + domain.slice(1) : '';
               enhanced = domainName ? `${currentTitle} | ${domainName}` : currentTitle + ' | Quality & Trust';
@@ -1525,16 +1547,16 @@ function activeTab() {
             }
             
             // Ensure example is in target range, otherwise adjust
-            if (enhanced.length < 50) {
+            if (enhanced.length < 45) {
               enhanced = enhanced + ' - Learn More';
             }
-            if (enhanced.length > 60) {
+            if (enhanced.length > 70) {
               // Trim to fit
               const words = enhanced.split(' ');
-              enhanced = words.slice(0, Math.min(words.length - 1, 8)).join(' ');
+              enhanced = words.slice(0, Math.min(words.length - 1, 10)).join(' ');
             }
             
-            if (enhanced.length >= 50 && enhanced.length <= 60) {
+            if (enhanced.length >= 45 && enhanced.length <= 70) {
               example = ` Example: "${enhanced}" (${enhanced.length} chars)`;
             } else if (domain) {
               // Fallback to domain-based example
@@ -1553,17 +1575,17 @@ function activeTab() {
           
           return {
             title: 'Title Too Short',
-            recommendation: `Your title is ${length} characters, but should be 50-60 characters for optimal SEO. Add more descriptive keywords while keeping it concise and compelling. Include your primary keyword near the beginning.${example}`
+            recommendation: `Your title is ${length} characters, but should be 45-70 characters for optimal SEO. Add more descriptive keywords while keeping it concise and compelling. Include your primary keyword near the beginning.${example}`
           };
-        } else if (length > 60) {
+        } else if (length > 70) {
           // Suggest shortening
           let suggestion = '';
           if (currentTitle) {
             const words = currentTitle.split(' ');
             // Try to suggest a shorter version
-            if (words.length > 8) {
-              const shortened = words.slice(0, 8).join(' ');
-              suggestion = shortened.length >= 50 && shortened.length <= 60 
+            if (words.length > 10) {
+              const shortened = words.slice(0, 10).join(' ');
+              suggestion = shortened.length >= 45 && shortened.length <= 70 
                 ? ` Consider: "${shortened}" (${shortened.length} chars)`
                 : '';
             }
@@ -1571,7 +1593,7 @@ function activeTab() {
           
           return {
             title: 'Title Too Long',
-            recommendation: `Your title is ${length} characters, but should be 50-60 characters. Search engines typically truncate titles over 60 characters. Shorten it by removing unnecessary words while keeping the most important keywords.${suggestion}`
+            recommendation: `Your title is ${length} characters, but should be 45-70 characters. Search engines typically truncate titles over 70 characters. Shorten it by removing unnecessary words while keeping the most important keywords.${suggestion}`
           };
         }
         return null;
@@ -2084,9 +2106,9 @@ Provide recommendations in JSON format:
         // Recreate the prompt if it was cleared
         recommendationsContent.innerHTML = `
           <div id="recommendations-prompt" style="padding: 40px 20px; text-align: center;">
-            <p style="color: #5f6368; font-size: 14px; margin-bottom: 16px;">Click below to generate AI-powered recommendations for SEO issues found on this page.</p>
+            <p id="recommendations-prompt-text" style="font-size: 14px; margin-bottom: 16px;">Click below to generate AI-powered recommendations for SEO issues found on this page.</p>
             <button id="generate-recommendations" class="settings-button">Generate Recommendations</button>
-            <p id="cooldown-message" style="margin-top: 12px; font-size: 12px; color: #9aa0a6; display: none;"></p>
+            <p id="cooldown-message" style="margin-top: 12px; font-size: 12px; display: none;"></p>
           </div>
         `;
         promptElement = document.getElementById('recommendations-prompt');
@@ -2352,7 +2374,7 @@ Provide recommendations in JSON format:
     if (tab.status === 'loading') {
       const checksEl = document.getElementById("checks");
       if (checksEl) {
-        checksEl.innerHTML = '<div style="padding: 40px 20px; text-align: center; color: #5f6368;">Page is currently loading. Please wait for the page to finish loading before scanning.</div>';
+        checksEl.innerHTML = '<div style="padding: 40px 20px; text-align: center;">Page is currently loading. Please wait for the page to finish loading before scanning.</div>';
       }
       return;
     }
@@ -2371,7 +2393,7 @@ Provide recommendations in JSON format:
       if (e.message && e.message.includes('navigated')) {
         const checksEl = document.getElementById("checks");
         if (checksEl) {
-          checksEl.innerHTML = '<div style="padding: 40px 20px; text-align: center; color: #ea4335;">Page refreshed during scan. Please wait for the page to fully load, then try scanning again.</div>';
+          checksEl.innerHTML = '<div style="padding: 40px 20px; text-align: center;">Page refreshed during scan. Please wait for the page to fully load, then try scanning again.</div>';
         }
       } else {
         render(null);
@@ -2379,6 +2401,51 @@ Provide recommendations in JSON format:
     }
   });
   
+  // Theme toggle functionality
+  async function loadTheme() {
+    try {
+      const result = await chrome.storage.local.get(['theme']);
+      const theme = result.theme || 'light'; // Default to light mode
+      applyTheme(theme);
+    } catch (e) {
+      console.error('Error loading theme:', e);
+      applyTheme('light'); // Default to light mode
+    }
+  }
+
+  function applyTheme(theme) {
+    const body = document.body;
+    const themeIcon = document.getElementById('theme-icon');
+    
+    if (theme === 'dark') {
+      body.classList.add('dark-mode');
+      if (themeIcon) themeIcon.textContent = '🌙';
+    } else {
+      body.classList.remove('dark-mode');
+      if (themeIcon) themeIcon.textContent = '☀️';
+    }
+  }
+
+  async function toggleTheme() {
+    const isDark = document.body.classList.contains('dark-mode');
+    const newTheme = isDark ? 'light' : 'dark';
+    applyTheme(newTheme);
+    try {
+      await chrome.storage.local.set({ theme: newTheme });
+    } catch (e) {
+      console.error('Error saving theme:', e);
+    }
+  }
+
+  // Initialize theme on page load
+  loadTheme();
+
+  // Add click handler for theme toggle
+  const themeToggle = document.getElementById('theme-toggle');
+  if (themeToggle) {
+    themeToggle.addEventListener('click', toggleTheme);
+  }
+
   (async () => {
     const tab = await activeTab();
     if (!tab) { render(null); return; }
