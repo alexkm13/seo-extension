@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>SEO Auditing Tool</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <div class="logo">SEO</div>
+      <h1>SEO Audit Report</h1>
+    </div>
+    <div class="header-right">
+      <button id="scan">Re-scan</button>
+      <label>
+        <input type="checkbox" id="deep" /> Deep checks
+      </label>
+    </div>
+  </header>
+
+  <section id="summary">
+    <div id="score-section">
+      <div id="score-display"></div>
+      <div id="status-badges"></div>
+    </div>
+    <div id="url"></div>
+  </section>
+
+  <nav id="tabs">
+    <button class="tab active" data-tab="audit">Audit</button>
+    <button class="tab" data-tab="recommendations">Recommendations</button>
+    <button class="tab" data-tab="settings">Settings</button>
+  </nav>
+
+  <div class="tab-content-container">
+    <section id="checks" class="tab-content active" data-content="audit"></section>
+    <section id="recommendations" class="tab-content" data-content="recommendations">
+      <div id="recommendations-content">
+        <div id="recommendations-prompt" style="padding: 40px 20px; text-align: center;">
+          <p style="color: #5f6368; font-size: 14px; margin-bottom: 16px;">Click below to generate AI-powered recommendations for SEO issues found on this page.</p>
+          <button id="generate-recommendations" class="settings-button">Generate Recommendations</button>
+          <p id="cooldown-message" style="margin-top: 12px; font-size: 12px; color: #9aa0a6; display: none;"></p>
+        </div>
+      </div>
+      <div id="recommendations-actions" style="padding: 16px; border-top: 1px solid #e8eaed; background: #f8f9fa; display: none;">
+        <button id="refresh-recommendations" class="settings-button" style="width: 100%;">Refresh Recommendations</button>
+      </div>
+    </section>
+    <section id="settings" class="tab-content" data-content="settings">
+      <div id="settings-content">
+        <div class="settings-section">
+          <h2 class="settings-title">AI Recommendations</h2>
+          <p class="settings-description">Configure your OpenAI API key to enable AI-powered SEO recommendations.</p>
+          <div class="api-key-section">
+            <label for="api-key-input" class="api-key-label">OpenAI API Key</label>
+            <input type="password" id="api-key-input" placeholder="sk-..." class="api-key-input-full">
+            <button id="save-api-key" class="settings-button">Save API Key</button>
+            <p class="api-key-status" id="api-key-status"></p>
+            <p class="api-key-note">Your API key is stored locally and never sent to our servers. You can get an API key from <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI Platform</a>.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
