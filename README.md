@@ -2,12 +2,12 @@
 A comprehensive Chrome extension for analyzing and improving SEO on any web page. Get instant SEO audits with actionable recommendations powered by AI.
 
 ## Features
-Comprehensive SEO Analysis: Analyzes title tags, meta descriptions, H1 tags, images, anchor text, Open Graph tags, robots meta, canonical URLs, and more
-AI-Powered Recommendations: Personalized SEO recommendations using ChatGPT (optional, requires API key)
-Rule-Based Fallback: Always provides helpful recommendations even without AI
-Deep Network Checks: Optional network-level analysis including HTTP status codes, robots.txt, cache headers, and link audits
-Real-Time Highlighting: See problematic elements directly on the page
-Letter Grade Scoring: Get an instant SEO grade (A+ to F) with weighted scoring
+- Comprehensive SEO Analysis: Analyzes title tags, meta descriptions, H1 tags, images, anchor text, Open Graph tags, robots meta, canonical URLs, and more
+- AI-Powered Recommendations: Personalized SEO recommendations using ChatGPT (optional, requires API key)
+- Rule-Based Fallback: Always provides helpful recommendations even without AI
+- Deep Network Checks: Optional network-level analysis including HTTP status codes, robots.txt, cache headers, and link audits
+- Real-Time Highlighting: See problematic elements directly on the page
+- Letter Grade Scoring: Get an instant SEO grade (A+ to F) with weighted scoring
 ## Installation
 - From Chrome Web Store (Coming Soon)
 - Visit the Chrome Web Store listing
