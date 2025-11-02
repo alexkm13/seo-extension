@@ -1,4 +1,3 @@
-// --- helpers ---
 function activeTab() {
     return new Promise(resolve => {
       chrome.tabs.query({ active: true, currentWindow: true }, tabs => resolve(tabs && tabs.length ? tabs[0] : null));
@@ -31,22 +30,19 @@ function activeTab() {
     });
   }
 
-  // Calls extension
   async function getReportRobust(tabId) {
     try { await sendMessage(tabId, { type: "PING" }); }
     catch { await injectContent(tabId); await sendMessage(tabId, { type: "PING" }); }
   
     try {
-      const ai = await sendMessage(tabId, { type: "GET_SEO_REPORT_AI" });
-      if (ai?.report) return ai;
+      const report = await sendMessage(tabId, { type: "GET_SEO_REPORT_AI" });
+      if (report?.report) return report;
     } catch {}
     const base = await sendMessage(tabId, { type: "GET_SEO_REPORT" });
     if (base?.error) throw new Error(base.error);
     return base;
   }
-  
-  
-  // Analyzer injected directly into the page (no content script required)
+
   async function analyzeViaInjection(tabId) {
     // Get current tab URL to detect navigation
     const tab = await chrome.tabs.get(tabId);
@@ -65,17 +61,26 @@ function activeTab() {
           throw new Error('Page is currently loading');
         }
         
-        // Wait for dynamically loaded content (title, meta description, H1s)
-        const waitStart = Date.now();
-        while (Date.now() - waitStart < 500) {
-          const hasTitle = document.querySelector('title')?.textContent?.trim() || document.title?.trim();
-          const hasMetaDesc = document.querySelector('meta[name="description"]') || 
-                             document.querySelector('meta[property="description"]') ||
-                             document.querySelector('meta[property="og:description"]');
-          const hasH1 = document.querySelector('h1');
-          
-          if (hasTitle && hasMetaDesc && hasH1) break;
-          await new Promise(resolve => setTimeout(resolve, 50));
+        // Quick check for dynamically loaded content - don't wait if already present
+        const hasTitle = document.querySelector('title')?.textContent?.trim() || document.title?.trim();
+        const hasMetaDesc = document.querySelector('meta[name="description"]') || 
+                           document.querySelector('meta[property="description"]') ||
+                           document.querySelector('meta[property="og:description"]');
+        const hasH1 = document.querySelector('h1');
+        
+        // Only wait if elements are actually missing (reduced timeout for speed)
+        if (!hasTitle || (!hasMetaDesc && !hasH1)) {
+          const waitStart = Date.now();
+          while (Date.now() - waitStart < 200) {
+            const hasTitleNow = document.querySelector('title')?.textContent?.trim() || document.title?.trim();
+            const hasMetaDescNow = document.querySelector('meta[name="description"]') || 
+                                 document.querySelector('meta[property="description"]') ||
+                                 document.querySelector('meta[property="og:description"]');
+            const hasH1Now = document.querySelector('h1');
+            
+            if (hasTitleNow && (hasMetaDescNow || hasH1Now)) break;
+            await new Promise(resolve => setTimeout(resolve, 25));
+          }
         }
         
         // Check if URL changed (refresh happened)
@@ -90,7 +95,6 @@ function activeTab() {
           throw new Error('Page navigated during analysis');
         }
         
-        // ---- in-page analyzer (no async) ----
         function getTextContent() {
           // Create a clone to avoid modifying the original DOM
           const clone = (document.body || document.documentElement).cloneNode(true);
@@ -269,12 +273,8 @@ function activeTab() {
   
         // Collect H1s - be less aggressive with filtering, prioritize main content
         // Try multiple queries to catch dynamically loaded H1s
-        let h1Elements = [...document.querySelectorAll("h1")];
-        // If no H1s found, check again after a brief moment (dynamic content might load late)
-        if (h1Elements.length === 0) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-          h1Elements = [...document.querySelectorAll("h1")];
-        }
+        // Quick H1 collection - no retry delay for faster analysis
+        const h1Elements = [...document.querySelectorAll("h1")];
         const h1s = h1Elements
           .filter(h => {
             // Check if H1 is in main content area (main, article, section with main role)
@@ -569,6 +569,11 @@ function activeTab() {
           ? `Anchor text issues: ${anchorAnalysis.issues.join('; ')}. Analysis: ${anchorAnalysis.branded} branded, ${anchorAnalysis.generic} generic, ${anchorAnalysis.partialMatch} partial match, ${anchorAnalysis.exactMatch} exact-match (${(exactMatchRatio * 100).toFixed(1)}%). Internal: ${anchorAnalysis.internal}, External: ${anchorAnalysis.external}.`
           : `Anchor text follows best practices. ${anchorAnalysis.branded} branded, ${anchorAnalysis.generic} generic, ${anchorAnalysis.partialMatch} partial match, ${anchorAnalysis.exactMatch} exact-match (${(exactMatchRatio * 100).toFixed(1)}%). Internal: ${anchorAnalysis.internal}, External: ${anchorAnalysis.external}.`;
         
+        // Store anchor analysis data in result for post-processing scoring
+        anchorAnalysis.exactMatchRatio = exactMatchRatio;
+        anchorAnalysis.descriptiveRatio = descriptiveRatio;
+        anchorAnalysis.internalRatio = internalRatio;
+        
         const emptyAnchors = anchors.filter(a => {
           const text = getAnchorText(a);
           return text.length === 0;
@@ -708,6 +713,7 @@ function activeTab() {
     // `results` is an array of {frameId, result}
     const first = results && results[0] && results[0].result;
     if (!first) throw new Error("No result from injected analyzer.");
+    
     return first;
   }
   
@@ -869,7 +875,6 @@ function activeTab() {
   // Store current report for recommendations
   window.currentReport = null;
 
-  // ---- UI render ----
   async function render(res) {
     const scoreDisplayEl = document.getElementById("score-display");
     const statusBadgesEl = document.getElementById("status-badges");
@@ -1021,6 +1026,15 @@ function activeTab() {
       if (c.id === 'anchor-text') {
         const actions = document.createElement('div');
         actions.className = 'check-actions';
+        
+        // Add "Elements flagged" text next to the button
+        if (c.where && c.where.length) {
+          const count = document.createElement("span");
+          count.className = "small";
+          count.textContent = `Elements flagged: ${c.where.length}`;
+          actions.appendChild(count);
+        }
+        
         const highlightBtn = document.createElement('button');
         highlightBtn.type = 'button';
         highlightBtn.textContent = 'Highlight on page';
@@ -1265,8 +1279,8 @@ function activeTab() {
       statusDiv.appendChild(statusTextSpan);
       div.appendChild(statusDiv);
       
-      // Add details to detailsDiv (skip h1-count and image-alt as they're in value column)
-      if (c.where && c.where.length && c.id !== 'h1-count' && c.id !== 'image-alt') {
+      // Add details to detailsDiv (skip h1-count and image-alt as they're in value column, and anchor-text has it in actions)
+      if (c.where && c.where.length && c.id !== 'h1-count' && c.id !== 'image-alt' && c.id !== 'anchor-text') {
         const count = document.createElement("div");
         count.className = "small";
         count.textContent = `Elements flagged: ${c.where.length}`;
@@ -1299,7 +1313,6 @@ function activeTab() {
     } catch {}
   }
   
-  // ---- AI Recommendations ----
   async function getOpenAIKey() {
     return new Promise((resolve) => {
       chrome.storage.local.get(['openai_api_key'], (result) => {
@@ -1756,19 +1769,24 @@ function activeTab() {
         };
       },
       'open-graph': (check) => {
-        // Parse which specific OG tags are missing
-        const missingMatches = check.message.match(/Missing\s+([^\.]+)/i);
-        const missingTags = missingMatches ? missingMatches[1].split(',').map(t => t.trim()) : [];
+        // The check message format is: "Open Graph tags: X (missing core tags)" or "No Open Graph tags."
+        // Always show all four core tags explicitly
+        const tag1 = 'og:title';
+        const tag2 = 'og:description';
+        const tag3 = 'og:image';
+        const tag4 = 'og:url';
+        const allCoreTags = `${tag1}, ${tag2}, ${tag3}, and ${tag4}`;
         
-        if (missingTags.length > 0 || check.message.includes('No Open Graph')) {
+        if (check.message.includes('No Open Graph') || check.message.includes('missing core tags')) {
           return {
             title: 'Missing Open Graph Tags',
-            recommendation: 'Add all four core Open Graph tags for social sharing: <meta property="og:title" content="Title">, <meta property="og:description" content="Description">, <meta property="og:image" content="Image URL">, and <meta property="og:url" content="URL">. These tags control how your page appears when shared on social media and are essential for proper social previews.'
+            recommendation: `Add all four core Open Graph tags for social sharing: ${allCoreTags}. Add these meta tags to your page's <head> section:\n\n<meta property="${tag1}" content="Your page title">\n<meta property="${tag2}" content="Your page description">\n<meta property="${tag3}" content="Image URL">\n<meta property="${tag4}" content="Page URL">\n\nThese tags control how your page appears when shared on social media and are essential for proper social previews.`
           };
         }
+        
         return {
           title: 'Open Graph Tags Need Improvement',
-          recommendation: 'Complete your Open Graph tags by ensuring all four core tags are present: og:title, og:description, og:image, and og:url. Complete OG tags improve social media sharing appearance and can drive more traffic from social platforms.'
+          recommendation: `Complete your Open Graph tags by ensuring all four core tags are present: ${allCoreTags}. Complete OG tags improve social media sharing appearance and can drive more traffic from social platforms.`
         };
       },
       'twitter-card': (check) => ({
@@ -1842,185 +1860,13 @@ function activeTab() {
     return recommendations.length > 0 ? { recommendations } : null;
   }
 
-  // Load local recommendation model (browser-compatible)
-  async function loadRecommendationModel() {
-    if (window.__recommendationModel) return window.__recommendationModel;
-    try {
-      const url = chrome.runtime.getURL("models/recommendation_model.json");
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Model load failed: ${res.status}`);
-      window.__recommendationModel = await res.json();
-      return window.__recommendationModel;
-    } catch (e) {
-      console.warn("[SEO Scout] Recommendation model failed to load:", e);
-      return null;
-    }
-  }
-
-  function textToTFIDFVector(text, vocabulary, idf) {
-    // Simple TF-IDF vectorization in JavaScript
-    const tokens = text.toLowerCase().match(/[a-z0-9]+/g) || [];
-    const vector = new Float32Array(Object.keys(vocabulary).length);
-    
-    // Count term frequencies
-    const tf = {};
-    tokens.forEach(token => {
-      if (vocabulary.hasOwnProperty(token)) {
-        const idx = vocabulary[token];
-        tf[idx] = (tf[idx] || 0) + 1;
-      }
-    });
-    
-    // Check for bigrams (consecutive tokens)
-    for (let i = 0; i < tokens.length - 1; i++) {
-      const bigram = `${tokens[i]} ${tokens[i + 1]}`;
-      if (vocabulary.hasOwnProperty(bigram)) {
-        const idx = vocabulary[bigram];
-        tf[idx] = (tf[idx] || 0) + 1;
-      }
-    }
-    
-    // Apply TF-IDF weighting
-    Object.keys(tf).forEach(idx => {
-      const termIdx = parseInt(idx);
-      if (idf && idf[termIdx] !== undefined) {
-        vector[termIdx] = tf[idx] * idf[termIdx];
-      }
-    });
-    
-    // Normalize (L2 norm)
-    let norm = 0;
-    for (let i = 0; i < vector.length; i++) {
-      norm += vector[i] * vector[i];
-    }
-    norm = Math.sqrt(norm);
-    if (norm > 0) {
-      for (let i = 0; i < vector.length; i++) {
-        vector[i] /= norm;
-      }
-    }
-    
-    return vector;
-  }
-
-  function cosineSimilarity(vec1, vec2) {
-    let dot = 0;
-    let norm1 = 0;
-    let norm2 = 0;
-    
-    for (let i = 0; i < vec1.length && i < vec2.length; i++) {
-      dot += vec1[i] * vec2[i];
-      norm1 += vec1[i] * vec1[i];
-      norm2 += vec2[i] * vec2[i];
-    }
-    
-    const denominator = Math.sqrt(norm1) * Math.sqrt(norm2);
-    return denominator > 0 ? dot / denominator : 0;
-  }
-
-  async function getLocalAIRecommendation(issueId, issueMessage, severity, context = {}) {
-    const model = await loadRecommendationModel();
-    
-    if (!model) {
-      return null;
-    }
-    
-    // Create issue text (same format as training)
-    const contextStr = JSON.stringify(context, Object.keys(context).sort());
-    const issueText = `${issueId} ${issueMessage} ${contextStr}`;
-    
-    // Convert to vector
-    const issueVector = textToTFIDFVector(issueText, model.vocabulary, model.idf);
-    
-    // Find best match
-    let bestMatchIdx = -1;
-    let bestSimilarity = -1;
-    const SIMILARITY_THRESHOLD = 0.3; // Minimum similarity to return a match
-    
-    for (let i = 0; i < model.embeddings.length; i++) {
-      const trainingVector = new Float32Array(model.embeddings[i]);
-      const similarity = cosineSimilarity(issueVector, trainingVector);
-      
-      if (similarity > bestSimilarity) {
-        bestSimilarity = similarity;
-        bestMatchIdx = i;
-      }
-    }
-    
-    // Return recommendation if similarity is high enough
-    if (bestSimilarity > SIMILARITY_THRESHOLD && bestMatchIdx >= 0) {
-      const match = model.training_data[bestMatchIdx];
-      return {
-        issue: issueId,
-        severity: severity,
-        title: match.recommendations[0].title,
-        recommendation: match.recommendations[0].recommendation
-      };
-    }
-    
-    return null; // No good match found
-  }
-
-  async function getLocalRecommendations(report) {
-    const issues = report.checks.filter(c => c.severity === 'fail' || c.severity === 'warn');
-    
-    if (issues.length === 0) {
-      return null;
-    }
-    
-    const recommendations = [];
-    
-    for (const issue of issues) {
-      // Extract context from issue message if possible
-      const context = {};
-      
-      // Try to parse numbers from message for context
-      const lengthMatch = issue.message.match(/(\d+)\s*\(/);
-      if (lengthMatch) {
-        context.current_length = parseInt(lengthMatch[1]);
-      }
-      
-      const countMatch = issue.message.match(/count:\s*(\d+)/i);
-      if (countMatch) {
-        context.count = parseInt(countMatch[1]);
-      }
-      
-      const missingMatch = issue.message.match(/(\d+)\/(\d+)/);
-      if (missingMatch) {
-        context.missing = parseInt(missingMatch[1]);
-        context.total = parseInt(missingMatch[2]);
-      }
-      
-      const rec = await getLocalAIRecommendation(
-        issue.id,
-        issue.message,
-        issue.severity,
-        context
-      );
-      
-      if (rec) {
-        recommendations.push(rec);
-      }
-    }
-    
-    return recommendations.length > 0 ? { recommendations } : null;
-  }
-
-  // AI-enhanced recommendations using OpenAI (optional, falls back to local model then rule-based)
+  // AI-enhanced recommendations using OpenAI (ChatGPT) - falls back to rule-based if no API key
   async function getAIRecommendations(report, onRetry = null) {
-    // Try local AI model first (no API needed)
-    const localRecs = await getLocalRecommendations(report);
-    if (localRecs && localRecs.recommendations && localRecs.recommendations.length > 0) {
-      console.log('[SEO Scout] Using local AI model for recommendations');
-      return localRecs;
-    }
-    
-    // If local model not available or no matches, try OpenAI (if API key configured)
+    // Try OpenAI (ChatGPT) if API key is configured
     const apiKey = await getOpenAIKey();
     
     // If no API key, fall back to rule-based recommendations
     if (!apiKey) {
-      console.log('[SEO Scout] No API key, falling back to rule-based recommendations');
       return getRuleBasedRecommendations(report);
     }
 
@@ -2096,7 +1942,6 @@ Provide recommendations in JSON format:
         const cooldown = await canMakeRequest();
         if (!cooldown.canRequest && attempt === 0) {
           // First attempt blocked by cooldown - use rule-based instead
-          console.log('[SEO Scout] AI cooldown active, using rule-based recommendations');
           return ruleBasedRecs;
         }
 
@@ -2130,7 +1975,6 @@ Provide recommendations in JSON format:
           // Handle specific error codes
           if (response.status === 429) {
             // Rate limit - fall back to rule-based
-            console.log('[SEO Scout] Rate limit hit, falling back to rule-based recommendations');
             if (attempt < maxRetries) {
               const retryAfter = response.headers.get('retry-after');
               const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : 60000;
@@ -2142,7 +1986,6 @@ Provide recommendations in JSON format:
             return ruleBasedRecs;
           } else if (response.status === 401 || response.status === 402 || response.status === 403) {
             // Auth/payment errors - fall back to rule-based silently
-            console.log('[SEO Scout] API error, using rule-based recommendations');
             return ruleBasedRecs;
           } else {
             throw new Error(`API error (${response.status}): ${errorMessage}`);
@@ -2166,13 +2009,11 @@ Provide recommendations in JSON format:
         }
         
         // If JSON parsing fails, return rule-based
-        console.log('[SEO Scout] Failed to parse AI response, using rule-based recommendations');
         return ruleBasedRecs;
       } catch (error) {
         lastError = error;
         // If it's not a retryable error, fall back to rule-based
         if (error.message && !error.message.includes('Rate limit') && !error.message.includes('429')) {
-          console.log('[SEO Scout] API error, falling back to rule-based:', error.message);
           return ruleBasedRecs;
         }
         // Otherwise continue to retry
@@ -2180,7 +2021,6 @@ Provide recommendations in JSON format:
     }
     
     // If all retries failed, return rule-based recommendations
-    console.log('[SEO Scout] All AI attempts failed, using rule-based recommendations');
     return ruleBasedRecs || null;
   }
 
@@ -2210,10 +2050,17 @@ Provide recommendations in JSON format:
         for (const rec of cached.recommendations || []) {
           const issue = report.checks.find(c => c.id === rec.issue);
           if (issue && (issue.severity === 'fail' || issue.severity === 'warn')) {
+            // Convert newlines to <br> tags and escape HTML to prevent issues
+            const recommendationText = (rec.recommendation || '')
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/\n/g, '<br>');
+            
             html += `
               <div class="recommendation-item ${rec.severity || issue.severity}">
                 <div class="recommendation-header">${rec.title || rec.issue}</div>
-                <div class="recommendation-text">${rec.recommendation}</div>
+                <div class="recommendation-text">${recommendationText}</div>
               </div>
             `;
           }
@@ -2311,11 +2158,11 @@ Provide recommendations in JSON format:
     if (recommendationsPrompt) recommendationsPrompt.style.display = 'none';
     
     const apiKey = await getOpenAIKey();
-    // Try local AI model first, then OpenAI, then rule-based
-    recommendationsContent.innerHTML = '<div class="recommendation-loading">Generating AI recommendations...</div>';
+    // Use OpenAI (ChatGPT) if API key is configured, otherwise use rule-based
+    recommendationsContent.innerHTML = '<div class="recommendation-loading">Generating AI recommendations with ChatGPT...</div>';
 
     try {
-      // Try AI recommendations (local model first, then OpenAI if available), falls back to rule-based
+      // Try AI recommendations using OpenAI (ChatGPT), falls back to rule-based if no API key
       const recommendations = await getAIRecommendations(report, (attempt, maxRetries) => {
         if (attempt > 0 && apiKey) {
           recommendationsContent.innerHTML = `<div class="recommendation-loading">Rate limit hit. Retrying with AI... (Attempt ${attempt + 1}/${maxRetries + 1})</div>`;
@@ -2336,10 +2183,17 @@ Provide recommendations in JSON format:
         const issue = report.checks.find(c => c.id === rec.issue);
         // Only show recommendations for issues that have warnings or failures
         if (issue && (issue.severity === 'fail' || issue.severity === 'warn')) {
+          // Convert newlines to <br> tags and escape HTML to prevent issues
+          const recommendationText = (rec.recommendation || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\n/g, '<br>');
+          
           html += `
             <div class="recommendation-item ${rec.severity || issue.severity}">
               <div class="recommendation-header">${rec.title || rec.issue}</div>
-              <div class="recommendation-text">${rec.recommendation}</div>
+              <div class="recommendation-text">${recommendationText}</div>
             </div>
           `;
         }
@@ -2359,7 +2213,6 @@ Provide recommendations in JSON format:
     }
   }
 
-  // ---- Tab switching ----
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
       const tabName = tab.dataset.tab;
@@ -2395,7 +2248,6 @@ Provide recommendations in JSON format:
     });
   });
 
-  // ---- Settings Page ----
   async function renderSettings() {
     const apiKeyInput = document.getElementById('api-key-input');
     const apiKeyStatus = document.getElementById('api-key-status');
@@ -2418,7 +2270,6 @@ Provide recommendations in JSON format:
     }
   }
 
-  // ---- API Key Management ----
   const saveApiKeyBtn = document.getElementById('save-api-key');
   const apiKeyInput = document.getElementById('api-key-input');
   const apiKeyStatus = document.getElementById('api-key-status');
@@ -2468,7 +2319,6 @@ Provide recommendations in JSON format:
     });
   }
 
-  // ---- Generate Recommendations Button ----
   const generateRecommendationsBtn = document.getElementById('generate-recommendations');
   if (generateRecommendationsBtn) {
     generateRecommendationsBtn.addEventListener('click', async () => {
@@ -2479,7 +2329,6 @@ Provide recommendations in JSON format:
     });
   }
 
-  // ---- Refresh Recommendations Button ----
   const refreshRecommendationsBtn = document.getElementById('refresh-recommendations');
   if (refreshRecommendationsBtn) {
     refreshRecommendationsBtn.addEventListener('click', async () => {
@@ -2494,7 +2343,6 @@ Provide recommendations in JSON format:
     });
   }
 
-  // ---- wire up ----
   document.getElementById("scan").addEventListener("click", async () => {
     const tab = await activeTab();
     if (!tab) { render(null); return; }

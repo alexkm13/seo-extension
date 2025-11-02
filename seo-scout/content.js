@@ -1,8 +1,6 @@
 // content.js
-console.log("[SEO Scout] content script loaded on", location.href);
 
 (function () {
-  // --- helpers (sync only) ---
   function getTextContent() {
     const clone = document.documentElement.cloneNode(true);
     clone.querySelectorAll("script,style,noscript,template").forEach(n => n.remove());
@@ -50,13 +48,144 @@ console.log("[SEO Scout] content script loaded on", location.href);
     return window.__anchorModel;
   }
 
+  async function loadAnchorScoringModel() {
+    if (window.__anchorScoringModel) return window.__anchorScoringModel;
+    try {
+      const url = chrome.runtime.getURL("models/anchor_text_scoring_model.json");
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Model load failed: ${res.status}`);
+      window.__anchorScoringModel = await res.json();
+      return window.__anchorScoringModel;
+    } catch (e) {
+      console.warn("[SEO Scout] Anchor scoring model failed to load:", e);
+      return null;
+    }
+  }
+
+  function scoreAnchorTextProfile(anchorAnalysis, model) {
+    if (!model || !anchorAnalysis || anchorAnalysis.analyzed === 0) {
+      // Fallback to simple scoring
+      let score = 100;
+      const issues = [];
+      
+      // If no anchors were analyzed, don't flag issues that require anchors
+      if (anchorAnalysis.analyzed === 0) {
+        // Only flag if there are empty anchors in the total
+        if (anchorAnalysis.empty > 0 && anchorAnalysis.total > 0) {
+          issues.push(`No analyzable anchors found (${anchorAnalysis.empty} empty anchor(s))`);
+          score = 95; // Not perfect, but not failing either
+        } else if (anchorAnalysis.total === 0) {
+          issues.push('No anchor links found on page');
+          score = 95; // Not perfect, but not failing either
+        }
+        // If analyzed === 0 and no empty anchors, it means all anchors were excluded
+        // This is actually fine, so return 100 with no issues
+        return { score, issues, grade: score >= 95 ? 'A+' : score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 60 ? 'D' : 'F' };
+      }
+      
+      if (anchorAnalysis.empty > 0) {
+        const emptyRatio = anchorAnalysis.empty / anchorAnalysis.total;
+        score -= Math.min(20, emptyRatio * 40);
+        issues.push(`Empty anchors: ${anchorAnalysis.empty}`);
+      }
+      
+      const exactMatchRatio = anchorAnalysis.exactMatch / anchorAnalysis.analyzed;
+      if (exactMatchRatio > 0.05) {
+        score -= Math.min(30, (exactMatchRatio - 0.05) * 300);
+        issues.push(`Exact-match: ${(exactMatchRatio * 100).toFixed(1)}%`);
+      }
+      
+      const descriptiveRatio = anchorAnalysis.descriptive / anchorAnalysis.analyzed;
+      if (descriptiveRatio < 0.5) {
+        score -= Math.min(20, (0.5 - descriptiveRatio) * 40);
+        issues.push(`Low descriptiveness: ${(descriptiveRatio * 100).toFixed(1)}%`);
+      }
+      
+      score = Math.max(0, Math.min(100, Math.round(score)));
+      
+      return { score, issues, grade: score >= 95 ? 'A+' : score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 60 ? 'D' : 'F' };
+    }
+    
+    const baseline = model.baseline_metrics || {};
+    const targetExactMatch = baseline.target_exact_match || 0.05;
+    const targetDescriptive = baseline.target_descriptive || 0.5;
+    const minInternalRatio = baseline.min_internal_ratio || 0.2;
+    const maxInternalRatio = baseline.max_internal_ratio || 0.95;
+    
+    let score = 100;
+    const issues = [];
+    
+    // Check empty anchors
+    if (anchorAnalysis.empty > 0) {
+      const emptyRatio = anchorAnalysis.total > 0 ? anchorAnalysis.empty / anchorAnalysis.total : 0;
+      const penalty = Math.min(20, emptyRatio * 40);
+      score -= penalty;
+      issues.push(`Empty anchors: ${anchorAnalysis.empty} (${(emptyRatio * 100).toFixed(1)}%)`);
+    }
+    
+    // Check exact-match ratio (target: ≤5%)
+    const exactMatchRatio = anchorAnalysis.analyzed > 0 ? anchorAnalysis.exactMatch / anchorAnalysis.analyzed : 0;
+    if (exactMatchRatio > targetExactMatch) {
+      const excess = exactMatchRatio - targetExactMatch;
+      const penalty = Math.min(30, excess * 300);
+      score -= penalty;
+      issues.push(`Exact-match too high: ${(exactMatchRatio * 100).toFixed(1)}% (target: ≤${(targetExactMatch * 100).toFixed(0)}%)`);
+    }
+    
+    // Check descriptive ratio (target: ≥50%)
+    // Only check if we have anchors analyzed
+    const descriptiveRatio = anchorAnalysis.analyzed > 0 ? anchorAnalysis.descriptive / anchorAnalysis.analyzed : 0;
+    if (anchorAnalysis.analyzed > 0 && descriptiveRatio < targetDescriptive) {
+      const deficit = targetDescriptive - descriptiveRatio;
+      const penalty = Math.min(20, deficit * 40);
+      score -= penalty;
+      issues.push(`Low descriptiveness: ${(descriptiveRatio * 100).toFixed(1)}% (target: ≥${(targetDescriptive * 100).toFixed(0)}%)`);
+    }
+    
+    // Check variety (branded + generic + partial match)
+    // Only check if we have anchors analyzed
+    const varietyRatio = anchorAnalysis.analyzed > 0 ? (anchorAnalysis.branded + anchorAnalysis.generic + anchorAnalysis.partialMatch) / anchorAnalysis.analyzed : 0;
+    if (anchorAnalysis.analyzed > 0 && varietyRatio < 0.3) {
+      const penalty = Math.min(15, (0.3 - varietyRatio) * 50);
+      score -= penalty;
+      issues.push(`Low variety: ${(varietyRatio * 100).toFixed(1)}% (target: ≥30%)`);
+    }
+    
+    // Check internal/external balance
+    const totalLinks = anchorAnalysis.internal + anchorAnalysis.external;
+    if (totalLinks > 0) {
+      const internalRatio = anchorAnalysis.internal / totalLinks;
+      if (internalRatio > maxInternalRatio) {
+        score -= 10;
+        issues.push(`Too few external links: ${(internalRatio * 100).toFixed(1)}% internal`);
+      } else if (internalRatio < minInternalRatio) {
+        score -= 10;
+        issues.push(`Too few internal links: ${(internalRatio * 100).toFixed(1)}% internal`);
+      }
+    }
+    
+    score = Math.max(0, Math.min(100, Math.round(score)));
+    
+    return {
+      score,
+      issues,
+      grade: score >= 95 ? 'A+' : score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 60 ? 'D' : 'F'
+    };
+  }
+
   let anchorModel = null;
   const anchorModelReady = (async () => {
-    try { anchorModel = await loadAnchorModel(); console.log("[SEO Scout] AI model ready"); }
+    try { anchorModel = await loadAnchorModel(); }
     catch (e) { console.warn("[SEO Scout] AI model failed to load:", e); }
   })();
+  
+  let anchorScoringModel = null;
+  const anchorScoringModelReady = (async () => {
+    try { anchorScoringModel = await loadAnchorScoringModel(); }
+    catch (e) { console.warn("[SEO Scout] Anchor scoring model failed to load:", e); }
+  })();
 
-  // AI feature for <a> text, might be screwed up
+  // AI feature for anchor text classification
   function hashToken(token, nFeatures) {
     let h = 2166136261 >>> 0;
     for (let i=0;i<token.length;i++){ h ^= token.charCodeAt(i); h = Math.imul(h,16777619); }
@@ -132,25 +261,33 @@ console.log("[SEO Scout] content script loaded on", location.href);
     }
     return { total: anchors.length, sampled: N, ...counts };
   }
-  // End of AI section
   
-  // Helper function to wait for elements to appear (for dynamically loaded content)
-  async function waitForElements(timeout = 500) {
+  // Wait for elements to appear (for dynamically loaded content)
+  async function waitForElements(timeout = 200) {
+    // Quick check first - if elements already exist, don't wait
+    const hasTitle = document.querySelector('title')?.textContent?.trim() || document.title?.trim();
+    const hasMetaDesc = document.querySelector('meta[name="description"]') || 
+                       document.querySelector('meta[property="description"]') ||
+                       document.querySelector('meta[property="og:description"]');
+    const hasH1 = document.querySelector('h1');
+    
+    // If title and at least one of metaDesc or H1 exists, proceed immediately
+    if (hasTitle && (hasMetaDesc || hasH1)) {
+      return true; // Elements already present, proceed immediately
+    }
+    
+    // Only wait if elements are missing, and reduce timeout
     const start = Date.now();
     while (Date.now() - start < timeout) {
-      const hasTitle = document.querySelector('title')?.textContent?.trim() || document.title?.trim();
-      const hasMetaDesc = document.querySelector('meta[name="description"]') || 
-                         document.querySelector('meta[property="description"]') ||
-                         document.querySelector('meta[name="og:description"]')?.getAttribute('content');
-      const hasH1 = document.querySelector('h1');
+      const hasTitleNow = document.querySelector('title')?.textContent?.trim() || document.title?.trim();
+      const hasMetaDescNow = document.querySelector('meta[name="description"]') || 
+                           document.querySelector('meta[property="description"]') ||
+                           document.querySelector('meta[property="og:description"]');
+      const hasH1Now = document.querySelector('h1');
       
-      // If we have all key elements, proceed
-      if (hasTitle && hasMetaDesc && hasH1) {
-        return true;
-      }
-      
-      // Small delay before checking again
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // Proceed if we have title and at least one other element
+      if (hasTitleNow && (hasMetaDescNow || hasH1Now)) return true;
+      await new Promise(resolve => setTimeout(resolve, 25)); // Check more frequently
     }
     return false; // Timeout reached, proceed anyway
   }
@@ -171,7 +308,8 @@ console.log("[SEO Scout] content script loaded on", location.href);
     
     // For pages that might load content dynamically, wait a bit for key elements
     // This helps catch content loaded via JavaScript after initial page load
-    await waitForElements(500);
+    // Reduced timeout for faster analysis - only wait if elements are actually missing
+    await waitForElements(200);
     
     // Get current URL - check if it changed (navigation happened)
     let url;
@@ -343,13 +481,8 @@ console.log("[SEO Scout] content script loaded on", location.href);
     
     // Capture and sort H1s immediately - be less aggressive with filtering
     // Only exclude H1s that are clearly in ads/widgets, but keep main content H1s
-    // Try multiple queries to catch dynamically loaded H1s
-    let h1Elements = [...document.querySelectorAll("h1")];
-    // If no H1s found, check again after a brief moment (dynamic content might load late)
-    if (h1Elements.length === 0) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-      h1Elements = [...document.querySelectorAll("h1")];
-    }
+    // Quick H1 collection - no retry delay for faster analysis
+    const h1Elements = [...document.querySelectorAll("h1")];
     snapshot.h1s = h1Elements
       .filter(h => {
         // Skip only obviously dynamic/ad content - be more permissive for main content
@@ -726,6 +859,13 @@ console.log("[SEO Scout] content script loaded on", location.href);
       issues: []
     };
     
+    // Track problematic anchors for highlighting
+    const problematicAnchors = {
+      empty: [],
+      exactMatch: [],
+      nonDescriptive: []
+    };
+    
     // Analyze up to 200 anchors (sampling for performance)
     const sampleSize = Math.min(sortedAnchors.length, 200);
     
@@ -742,6 +882,7 @@ console.log("[SEO Scout] content script loaded on", location.href);
       // Check if empty
       if (text.length === 0) {
         anchorAnalysis.empty++;
+        problematicAnchors.empty.push(anchor);
         continue;
       }
       
@@ -782,6 +923,7 @@ console.log("[SEO Scout] content script loaded on", location.href);
       
       if (isLikelyExactMatch) {
         anchorAnalysis.exactMatch++;
+        problematicAnchors.exactMatch.push(anchor);
       } else if (!isBranded && !isGeneric && text.length > 5) {
         // Partial match or descriptive
         anchorAnalysis.partialMatch++;
@@ -793,6 +935,9 @@ console.log("[SEO Scout] content script loaded on", location.href);
                            !isGeneric;
       if (isDescriptive) {
         anchorAnalysis.descriptive++;
+      } else if (!isGeneric && text.length > 0) {
+        // Non-descriptive anchor (not generic but also not descriptive enough)
+        problematicAnchors.nonDescriptive.push(anchor);
       }
       
       // Classify as internal or external
@@ -823,50 +968,76 @@ console.log("[SEO Scout] content script loaded on", location.href);
     const varietyScore = anchorAnalysis.analyzed > 0 ? 
       (anchorAnalysis.branded + anchorAnalysis.generic + anchorAnalysis.partialMatch) / anchorAnalysis.analyzed : 0;
     
-    // Check if internal/external links are balanced (at least some of both, or reasonable ratio)
-    const totalLinks = anchorAnalysis.internal + anchorAnalysis.external;
-    const internalRatio = totalLinks > 0 ? anchorAnalysis.internal / totalLinks : 0;
-    const hasBalance = totalLinks === 0 || (internalRatio > 0.2 && internalRatio < 0.95); // At least some external, not all internal
+    // Score anchor text using trained model based on SEO-optimized websites
+    // Don't wait for model - use whatever is available (model loads in background)
+    const scoringResult = scoreAnchorTextProfile(anchorAnalysis, anchorScoringModel);
+    const anchorScore = scoringResult.score;
+    const anchorGrade = scoringResult.grade;
     
-    // Determine issues
-    if (anchorAnalysis.empty > 0) {
-      anchorAnalysis.issues.push(`${anchorAnalysis.empty} empty anchor(s)`);
-    }
-    if (exactMatchRatio > 0.05) {
-      anchorAnalysis.issues.push(`${(exactMatchRatio * 100).toFixed(1)}% exact-match (target: ≤5%)`);
-    }
-    if (descriptiveRatio < 0.5) {
-      anchorAnalysis.issues.push(`Only ${(descriptiveRatio * 100).toFixed(1)}% descriptive (target: ≥50%)`);
-    }
-    if (!hasBalance && totalLinks > 0) {
-      if (internalRatio > 0.95) {
-        anchorAnalysis.issues.push('Too few external links');
-      } else if (internalRatio < 0.2) {
-        anchorAnalysis.issues.push('Too few internal links');
+    // Use model's issues if available, otherwise determine issues from rubric
+    if (scoringResult.issues && scoringResult.issues.length > 0) {
+      anchorAnalysis.issues = scoringResult.issues;
+    } else if (anchorAnalysis.analyzed === 0) {
+      // If no anchors analyzed, use scoring result's issues (which should be empty or minimal)
+      // Don't add fallback issues that require analyzed anchors
+      anchorAnalysis.issues = scoringResult.issues || [];
+    } else {
+      // Determine issues based on rubric if model didn't provide any AND we have analyzed anchors
+      if (anchorAnalysis.empty > 0) {
+        anchorAnalysis.issues.push(`${anchorAnalysis.empty} empty anchor(s)`);
       }
-    }
-    if (varietyScore < 0.3) {
-      anchorAnalysis.issues.push('Low anchor text variety');
+      if (exactMatchRatio > 0.05) {
+        anchorAnalysis.issues.push(`${(exactMatchRatio * 100).toFixed(1)}% exact-match (target: ≤5%)`);
+      }
+      if (descriptiveRatio < 0.5) {
+        anchorAnalysis.issues.push(`Only ${(descriptiveRatio * 100).toFixed(1)}% descriptive (target: ≥50%)`);
+      }
+      const totalLinks = anchorAnalysis.internal + anchorAnalysis.external;
+      const internalRatio = totalLinks > 0 ? anchorAnalysis.internal / totalLinks : 0;
+      const hasBalance = totalLinks === 0 || (internalRatio > 0.2 && internalRatio < 0.95);
+      if (!hasBalance && totalLinks > 0) {
+        if (internalRatio > 0.95) {
+          anchorAnalysis.issues.push('Too few external links');
+        } else if (internalRatio < 0.2) {
+          anchorAnalysis.issues.push('Too few internal links');
+        }
+      }
+      if (varietyScore < 0.3) {
+        anchorAnalysis.issues.push('Low anchor text variety');
+      }
     }
     
     const hasIssues = anchorAnalysis.issues.length > 0;
     const anchorStatus = hasIssues ? 'warn' : 'pass';
-    const anchorMessage = hasIssues 
-      ? `Anchor text issues: ${anchorAnalysis.issues.join('; ')}. Analysis: ${anchorAnalysis.branded} branded, ${anchorAnalysis.generic} generic, ${anchorAnalysis.partialMatch} partial match, ${anchorAnalysis.exactMatch} exact-match (${(exactMatchRatio * 100).toFixed(1)}%). Internal: ${anchorAnalysis.internal}, External: ${anchorAnalysis.external}.`
-      : `Anchor text follows best practices. ${anchorAnalysis.branded} branded, ${anchorAnalysis.generic} generic, ${anchorAnalysis.partialMatch} partial match, ${anchorAnalysis.exactMatch} exact-match (${(exactMatchRatio * 100).toFixed(1)}%). Internal: ${anchorAnalysis.internal}, External: ${anchorAnalysis.external}.`;
     
-    // Empty anchors for reporting (still needed for highlighting)
-    const emptyAnchors = sortedAnchors.filter(a => {
-      const text = getAnchorText(a);
-      if (text.length > 0) return false;
-      if (a.querySelector('img') || a.querySelector('audio') || a.querySelector('video')) return false;
-      let parent = a.parentElement;
-      while (parent && parent !== document.body) {
-        if (parent.querySelector('img') || parent.querySelector('audio') || parent.querySelector('video')) return false;
-        parent = parent.parentElement;
-      }
-      return true;
-    });
+    // Enhanced message with score and grade from trained model
+    const anchorMessage = hasIssues 
+      ? `Anchor text score: ${anchorScore}/100 (${anchorGrade}). Issues: ${anchorAnalysis.issues.join('; ')}. Analysis: ${anchorAnalysis.branded} branded, ${anchorAnalysis.generic} generic, ${anchorAnalysis.partialMatch} partial match, ${anchorAnalysis.exactMatch} exact-match (${(exactMatchRatio * 100).toFixed(1)}%). Internal: ${anchorAnalysis.internal}, External: ${anchorAnalysis.external}.`
+      : `Anchor text score: ${anchorScore}/100 (${anchorGrade}). Follows best practices. ${anchorAnalysis.branded} branded, ${anchorAnalysis.generic} generic, ${anchorAnalysis.partialMatch} partial match, ${anchorAnalysis.exactMatch} exact-match (${(exactMatchRatio * 100).toFixed(1)}%). Internal: ${anchorAnalysis.internal}, External: ${anchorAnalysis.external}.`;
+    
+    // Collect all problematic anchors for highlighting based on issues found
+    const anchorsToHighlight = [];
+    
+    // Always highlight empty anchors if they exist
+    if (anchorAnalysis.empty > 0) {
+      anchorsToHighlight.push(...problematicAnchors.empty);
+    }
+    
+    // Highlight exact-match anchors if ratio is too high (>5%)
+    if (exactMatchRatio > 0.05) {
+      anchorsToHighlight.push(...problematicAnchors.exactMatch);
+    }
+    
+    // Highlight non-descriptive anchors if ratio is too low (<50%)
+    // But exclude exact-match anchors to avoid double highlighting
+    if (descriptiveRatio < 0.5 && anchorAnalysis.analyzed > 0) {
+      const exactMatchSet = new Set(problematicAnchors.exactMatch);
+      const nonDescriptiveToHighlight = problematicAnchors.nonDescriptive.filter(a => !exactMatchSet.has(a));
+      anchorsToHighlight.push(...nonDescriptiveToHighlight);
+    }
+    
+    // Remove duplicates (same anchor element might be flagged for multiple reasons)
+    const uniqueAnchorsToHighlight = Array.from(new Set(anchorsToHighlight));
 
     // Use snapshot meta tags data (already sorted and captured)
     const ogCount = snapshot.ogTags.length;
@@ -991,11 +1162,11 @@ console.log("[SEO Scout] content script loaded on", location.href);
     }
     
     // Use the new anchor text best practices analysis
-    add("anchor-text",
+      add("anchor-text",
       !hasIssues,
       anchorStatus,
       anchorMessage,
-      emptyAnchors // Only highlight empty anchors
+      uniqueAnchorsToHighlight // Highlight all problematic anchors (empty, exact-match, non-descriptive)
     );
     // Check OpenGraph tags - require all 4 core tags (og:title, og:description, og:image, og:url) for pass
     // This check is weighted heavily - all 4 core tags must be present

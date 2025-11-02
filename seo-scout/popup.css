@@ -640,6 +640,7 @@ input[type="checkbox"] {
 .check-actions {
   display: flex;
   align-items: center;
+  gap: 12px;
 }
 
 .check-actions button {

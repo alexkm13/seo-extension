@@ -1,7 +1,8 @@
 {
   "manifest_version": 3,
   "name": "SEO Audit Report",
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "description": "Comprehensive SEO auditing tool that analyzes web pages for SEO issues, provides actionable recommendations, and offers AI-powered personalized suggestions.",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": ["https://api.openai.com/*"],
   "action": { "default_popup": "popup.html" },
@@ -12,7 +13,7 @@
     "all_frames": true
   }],
   "web_accessible_resources": [{
-    "resources": ["models/anchor_model.json", "models/recommendation_model.json"],
+    "resources": ["models/anchor_model.json", "models/anchor_text_scoring_model.json"],
     "matches": ["<all_urls>"]
   }],
   "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
