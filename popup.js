@@ -2464,13 +2464,6 @@ Provide recommendations in JSON format:
     themeToggle.addEventListener('click', toggleTheme);
   }
 
-  // Add click handler for close button
-  const closeBtn = document.getElementById('close-extension');
-  if (closeBtn) {
-    closeBtn.addEventListener('click', () => {
-      window.close();
-    });
-  }
 
   (async () => {
     const tab = await activeTab();
