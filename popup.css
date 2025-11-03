@@ -105,6 +105,33 @@ header {
   box-shadow: none;
 }
 
+.close-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  transition: all 0.2s ease;
+  box-shadow: none;
+  line-height: 1;
+  font-weight: 300;
+}
+
+.close-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-light);
+  color: var(--text-primary);
+  transform: none;
+  box-shadow: none;
+}
+
 .header-left {
   display: flex;
   align-items: center;
