@@ -3,7 +3,7 @@ function activeTab() {
       chrome.tabs.query({ active: true, currentWindow: true }, tabs => resolve(tabs && tabs.length ? tabs[0] : null));
     });
   }
-  function isHttpUrl(u){ try { const p=new URL(u); return p.protocol==='http:'||p.protocol==='https:'; } catch { return false; } }
+  function isHttpUrl(u){ try { const p=new URL(u); return (p.protocol==='http:'||p.protocol==='https:') && !/^(chrome-extension|moz-extension|extension):/i.test(u); } catch { return false; } }
   function sevClass(s){ return s==="pass"?"pass":(s==="warn"?"warn":"fail"); }
   
   // Try messaging first (if your content.js has listeners)
@@ -582,7 +582,13 @@ function activeTab() {
         const linkHrefs = Array.from(new Set(
           anchors.slice(0, 200)
             .map(a => (a.getAttribute('href') || a.href || ''))
-            .filter(h => /^https?:\/\//i.test(h))
+            .filter(h => {
+              if (!h) return false;
+              // Filter out extension URLs
+              if (/^(chrome-extension|moz-extension|extension):\/\//i.test(h)) return false;
+              // Only allow http/https URLs
+              return /^https?:\/\//i.test(h);
+            })
         )).slice(0, 200);
   
         // Collect meta tags in sorted order for deterministic results
@@ -766,7 +772,13 @@ function activeTab() {
       const baseChecks = existingChecks.filter(check => !networkCheckIds.includes(check.id));
       
       // Links audit: classify and sample broken via HEAD (cap 50)
-      const allLinks = (report.linksSample || []).filter(h => /^https?:\/\//i.test(h)).slice(0, 120);
+      const allLinks = (report.linksSample || []).filter(h => {
+        if (!h) return false;
+        // Filter out extension URLs
+        if (/^(chrome-extension|moz-extension|extension):\/\//i.test(h)) return false;
+        // Only allow http/https URLs
+        return /^https?:\/\//i.test(h);
+      }).slice(0, 120);
       const origin = new URL(u).origin;
       let internal = 0, external = 0, subdomain = 0, relNoFollow=0, relUGC=0, relSponsored=0;
       try {
