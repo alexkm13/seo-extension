@@ -781,7 +781,7 @@ function activeTab() {
 
       const sampleForHead = allLinks.slice(0, 20);
       const broken = [];
-      const concurrency = 6;
+      const concurrency = 3; // Reduced from 6 to avoid rate limits
       async function headWithTimeout(url, ms) {
         const ctrl = new AbortController();
         const to = setTimeout(() => ctrl.abort(), ms);
@@ -798,10 +798,19 @@ function activeTab() {
             if (timeLeft() <= 0) return;
             const r = await headWithTimeout(h, Math.min(1500, timeLeft()));
             if (!r || r.status >= 400) broken.push({ url: h, status: r ? r.status : 0 });
-          } catch {
+          } catch (error) {
+            // Handle rate limit errors specifically
+            if (error.message && error.message.includes('Rate limit')) {
+              // Wait a bit before continuing with remaining links
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
             broken.push({ url: h, status: 0 });
           }
         }));
+        // Add a small delay between batches to avoid rate limits
+        if (i + concurrency < sampleForHead.length) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
       }
 
       // Create new checks array starting with base checks, then add network checks
