@@ -779,14 +779,21 @@ function activeTab() {
         } catch {}
       });
 
-      const sampleForHead = allLinks.slice(0, 20);
+      const sampleForHead = allLinks.slice(0, 10); // Further reduced to avoid rate limits
       const broken = [];
-      const concurrency = 3; // Reduced from 6 to avoid rate limits
+      const concurrency = 2; // Reduced from 3 to avoid rate limits
       async function headWithTimeout(url, ms) {
         const ctrl = new AbortController();
         const to = setTimeout(() => ctrl.abort(), ms);
         try {
-          return await fetch(url, { method: 'HEAD', redirect: 'manual', signal: ctrl.signal });
+          const response = await fetch(url, { method: 'HEAD', redirect: 'manual', signal: ctrl.signal });
+          // Check for rate limit response codes
+          if (response.status === 429) {
+            throw new Error('Rate limited');
+          }
+          return response;
+        } catch (error) {
+          throw error;
         } finally {
           clearTimeout(to);
         }
@@ -800,16 +807,16 @@ function activeTab() {
             if (!r || r.status >= 400) broken.push({ url: h, status: r ? r.status : 0 });
           } catch (error) {
             // Handle rate limit errors specifically
-            if (error.message && error.message.includes('Rate limit')) {
-              // Wait a bit before continuing with remaining links
-              await new Promise(resolve => setTimeout(resolve, 1000));
+            if (error.message && (error.message.includes('Rate limit') || error.message.includes('429'))) {
+              // Wait longer before continuing with remaining links
+              await new Promise(resolve => setTimeout(resolve, 2000));
             }
             broken.push({ url: h, status: 0 });
           }
         }));
-        // Add a small delay between batches to avoid rate limits
+        // Add a longer delay between batches to avoid rate limits
         if (i + concurrency < sampleForHead.length) {
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise(resolve => setTimeout(resolve, 300));
         }
       }
 
