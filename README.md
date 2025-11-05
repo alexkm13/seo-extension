@@ -10,6 +10,7 @@ A comprehensive Chrome extension for analyzing and improving SEO on any web page
 - **Deep Network Checks**: Optional network-level analysis including HTTP status codes, robots.txt, cache headers, and link audits
 - **Real-Time Highlighting**: See problematic elements directly on the page
 - **Letter Grade Scoring**: Get an instant SEO grade (A+ to F) with weighted scoring
+- **Security-First**: Built with security best practices including input validation and XSS prevention
 
 ## Installation
 
@@ -19,11 +20,15 @@ A comprehensive Chrome extension for analyzing and improving SEO on any web page
 3. Pin the extension to your toolbar for easy access
 
 ### Manual Installation (Developer Mode)
-1. Clone or download this repository
+1. Clone or download this repository:
+   ```bash
+   git clone https://github.com/alexkm13/seo-extension.git
+   cd seo-extension
+   ```
 2. Open Chrome and navigate to `chrome://extensions/`
 3. Enable "Developer mode" (toggle in top right)
 4. Click "Load unpacked"
-5. Select the `seo-scout` folder
+5. Select the `seo-extension` folder (or the folder where you cloned the repository)
 6. The extension icon should appear in your toolbar
 
 ## Usage
@@ -65,6 +70,8 @@ A comprehensive Chrome extension for analyzing and improving SEO on any web page
 - No data is sent to external servers except OpenAI (when using AI features)
 - The extension only accesses web pages you actively audit
 
+For detailed privacy information, see [PRIVACY.md](PRIVACY.md)
+
 ## Development
 
 ### Project Structure
@@ -93,5 +100,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ## Support
 
-For issues, feature requests, or questions, please open an issue on GitHub.
+For issues, feature requests, or questions, please open an issue on [GitHub](https://github.com/alexkm13/seo-extension/issues).
+
+## Repository
+
+- **GitHub**: [https://github.com/alexkm13/seo-extension](https://github.com/alexkm13/seo-extension)
+- **License**: MIT License - see [LICENSE](LICENSE) for details
+- **Privacy Policy**: See [PRIVACY.md](PRIVACY.md) for detailed privacy information
 
